@@ -1,0 +1,53 @@
+name: Build Kernel
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_HARDLINK: "true"
+      KERNEL_DEFCONFIG: "OP4BFB_defconfig"  # Update if needed for arm64
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        submodules: 'true'
+        fetch-depth: 100
+
+    - name: Set up ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+
+    - name: GetTime
+      id: get_time
+      run: |
+        echo "TIME=$(TZ=UTC-8 date +%m%d%H%M )" >> $GITHUB_OUTPUT
+
+    - name: Build Kernel
+      run: |
+        if [[ ! -d gcc ]]; then
+          git clone https://github.com/ruben1863/android_gcc_6.4.1_aarch64-linux-android gcc
+        fi
+        mkdir -p out
+        export CROSS_COMPILE=${PWD}/gcc/bin/aarch64-linux-android-
+        export USE_CCACHE=1
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export TARGET=out
+        make O=$TARGET ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE $KERNEL_DEFCONFIG | tee -a Defconfig.log
+        make O=$TARGET ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE -j8 | tee -a Kernel.log
+
+    - name: Upload zImage-dtb
+      run: |
+        curl -T out/arch/arm64/boot/Image.gz-dtb https://bashupload.com/ --output upload_link
+        UPLOAD_LINK=$(< upload_link)
+        echo "Uploaded file link: $UPLOAD_LINK"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
